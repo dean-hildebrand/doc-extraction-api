@@ -30,6 +30,13 @@ module DocExApi
 
     config.active_job.queue_adapter = :sidekiq
 
+    # UUID keys so Active Storage attachments can point at our records. The
+    # generator default is gen_random_uuid() (v4); tables exposed by the API
+    # must set default: -> { "uuidv7()" } themselves (ADR 0001).
+    config.generators do |g|
+      g.orm :active_record, primary_key_type: :uuid
+    end
+
     # Configuration for the application, engines, and railties goes here.
     #
     # These settings can be overridden in specific environments using the files
