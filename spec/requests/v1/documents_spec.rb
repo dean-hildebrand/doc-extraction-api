@@ -145,7 +145,7 @@ RSpec.describe "Documents", type: :request do
     end
   end
 
-  describe "POST /v1/documents size limits" do
+  describe "POST /v1/documents (size limits)" do
     it "rejects a PDF over 20 MB, stating the PDF limit" do
       post "/v1/documents", params: { file: padded_upload("invoice.pdf", 20.megabytes + 1, "application/pdf") },
                             headers: auth_headers(api_key)
@@ -155,8 +155,8 @@ RSpec.describe "Documents", type: :request do
     end
 
     it "rejects a PNG or JPEG over 7 MB, stating the image limit" do
-      { "receipt.png" => "PNG", "receipt.jpg" => "JPEG" }.each do |fixture, label|
-        post "/v1/documents", params: { file: padded_upload(fixture, 7.megabytes + 1, "image/png") },
+      { "receipt.png" => [ "PNG", "image/png" ], "receipt.jpg" => [ "JPEG", "image/jpeg" ] }.each do |fixture, (label, content_type)|
+        post "/v1/documents", params: { file: padded_upload(fixture, 7.megabytes + 1, content_type) },
                               headers: auth_headers(api_key)
 
         expect(response).to have_http_status(:unprocessable_content), "expected 422 for #{fixture}"
