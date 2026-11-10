@@ -10,6 +10,10 @@ module V1
       render_error ApiError.not_found
     end
 
+    rescue_from ActionController::ParameterMissing do |exception|
+      render_error ApiError.parameter_missing(exception.param)
+    end
+
     rescue_from ApiError do |error|
       render_error error
     end

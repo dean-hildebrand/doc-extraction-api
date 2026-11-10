@@ -47,6 +47,31 @@ class ApiError < StandardError
     new(type: "internal", code: "internal_error", message: "An unexpected error occurred.")
   end
 
+  def self.parameter_missing(param)
+    new(type: "invalid_request", code: "parameter_missing",
+        message: "The #{param} parameter is required.", param: param.to_s)
+  end
+
+  def self.unsupported_file_type
+    new(type: "invalid_request", code: "unsupported_file_type",
+        message: "The file must be a PDF, PNG or JPEG.", param: "file")
+  end
+
+  def self.file_too_large(label:, max_bytes:)
+    new(type: "invalid_request", code: "file_too_large",
+        message: "#{label} files must be #{max_bytes / 1.megabyte} MB or smaller.", param: "file")
+  end
+
+  def self.too_many_pages(max_pages)
+    new(type: "invalid_request", code: "too_many_pages",
+        message: "PDF files must have #{max_pages} pages or fewer.", param: "file")
+  end
+
+  def self.unreadable_file
+    new(type: "invalid_request", code: "unreadable_file",
+        message: "The file could not be read as a PDF.", param: "file")
+  end
+
   def self.not_found
     new(type: "not_found", code: "not_found", message: "No such resource.")
   end
