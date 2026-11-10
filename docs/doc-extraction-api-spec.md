@@ -137,7 +137,7 @@ All under `/v1`, JSON only, Bearer token auth. Every `POST` accepts an `Idempote
 
 | Method | Path | Purpose | Returns |
 | --- | --- | --- | --- |
-| POST | `/documents` | Upload a file (multipart, max 20 MB, PDF/PNG/JPEG) | 201 document |
+| POST | `/documents` | Upload a file (multipart `file` field, PDF/PNG/JPEG; limits below) | 201 document, 422 if rejected |
 | GET | `/documents` | List, cursor paginated, filter by created\_after | 200 list |
 | GET | `/documents/:id` | Document metadata | 200 document |
 | GET | `/documents/:id/download` | Short-lived signed URL to the file | 302 redirect |
@@ -165,6 +165,26 @@ All under `/v1`, JSON only, Bearer token auth. Every `POST` accepts an `Idempote
 | POST | `/api_keys` | Create key; full token shown once | 201 key |
 | DELETE | `/api_keys/:id` | Revoke | 204 |
 | GET | `/usage` | Documents, pages and tokens this billing period | 200 usage |
+
+### Upload limits and errors
+
+`POST /documents` detects the content type from the file's bytes and ignores the type the client declares. A rejected upload stores nothing.
+
+| Type | Max size | Max pages |
+| --- | --- | --- |
+| PDF | 20 MB | 20 |
+| PNG | 7 MB | 1 |
+| JPEG | 7 MB | 1 |
+
+Every rejection is a 422 with type `invalid_request` and `param: "file"`. Checks run in the order listed and the first failure is reported.
+
+| Code | When | Example message |
+| --- | --- | --- |
+| `parameter_missing` | No `file` field, or the field holds text rather than an upload | The file parameter is required. |
+| `unsupported_file_type` | The bytes are not a PDF, PNG or JPEG | The file must be a PDF, PNG or JPEG. |
+| `file_too_large` | Over the size limit for its type | PNG files must be 7 MB or smaller. |
+| `unreadable_file` | A PDF that cannot be parsed (including an encrypted one), or an image that does not fully decode | The file could not be read as a PNG. |
+| `too_many_pages` | A PDF with more than 20 pages | PDF files must have 20 pages or fewer. |
 
 Outside `/v1`: `GET /up` health check and `GET /docs` for the OpenAPI spec.
 

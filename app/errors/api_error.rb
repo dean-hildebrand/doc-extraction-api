@@ -57,19 +57,19 @@ class ApiError < StandardError
         message: "The file must be a PDF, PNG or JPEG.", param: "file")
   end
 
-  def self.file_too_large(label:, max_bytes:)
+  def self.file_too_large(label, max_size)
     new(type: "invalid_request", code: "file_too_large",
-        message: "#{label} files must be #{max_bytes / 1.megabyte} MB or smaller.", param: "file")
+        message: "#{label} files must be #{max_size} or smaller.", param: "file")
   end
 
-  def self.too_many_pages(max_pages)
+  def self.too_many_pages(label, max_pages)
     new(type: "invalid_request", code: "too_many_pages",
-        message: "PDF files must have #{max_pages} pages or fewer.", param: "file")
+        message: "#{label} files must have #{max_pages} pages or fewer.", param: "file")
   end
 
-  def self.unreadable_file
+  def self.unreadable_file(label)
     new(type: "invalid_request", code: "unreadable_file",
-        message: "The file could not be read as a PDF.", param: "file")
+        message: "The file could not be read as a #{label}.", param: "file")
   end
 
   def self.not_found

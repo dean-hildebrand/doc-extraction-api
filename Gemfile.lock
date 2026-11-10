@@ -388,6 +388,7 @@ DEPENDENCIES
   rails (~> 8.1.4, >= 8.1.4.1)
   rspec-rails (~> 8.1)
   rubocop-rails-omakase
+  ruby-vips (~> 2.3)
   sidekiq (~> 8.1)
   thruster
   tzinfo-data

@@ -19,8 +19,8 @@ RSpec.describe "Documents", type: :request do
     Rack::Test::UploadedFile.new(file.path, content_type, true)
   end
 
-  def file_too_large_error(message)
-    { "error" => { "type" => "invalid_request", "code" => "file_too_large", "message" => message, "param" => "file" } }
+  def invalid_request_error(code, message)
+    { "error" => { "type" => "invalid_request", "code" => code, "message" => message, "param" => "file" } }
   end
 
   describe "POST /v1/documents" do
@@ -96,24 +96,25 @@ RSpec.describe "Documents", type: :request do
       post_document(api_key, fixture: "twenty_one_pages.pdf")
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(json).to eq(
-        "error" => {
-          "type" => "invalid_request", "code" => "too_many_pages",
-          "message" => "PDF files must have 20 pages or fewer.", "param" => "file"
-        }
-      )
+      expect(json).to eq(invalid_request_error("too_many_pages", "PDF files must have 20 pages or fewer."))
     end
 
     it "rejects a PDF that cannot be read" do
       post_document(api_key, fixture: "broken.pdf")
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(json).to eq(
-        "error" => {
-          "type" => "invalid_request", "code" => "unreadable_file",
-          "message" => "The file could not be read as a PDF.", "param" => "file"
-        }
-      )
+      expect(json).to eq(invalid_request_error("unreadable_file", "The file could not be read as a PDF."))
+    end
+
+    it "rejects a PNG or JPEG that cannot be decoded" do
+      { "truncated.png" => [ "PNG", "image/png" ], "truncated.jpg" => [ "JPEG", "image/jpeg" ] }.each do |fixture, (label, content_type)|
+        expect do
+          post_document(api_key, fixture: fixture, content_type: content_type)
+        end.not_to change(Document, :count)
+
+        expect(response).to have_http_status(:unprocessable_content), "expected 422 for #{fixture}"
+        expect(json).to eq(invalid_request_error("unreadable_file", "The file could not be read as a #{label}."))
+      end
     end
 
     it "rejects a request with no file, naming the missing field" do
@@ -121,12 +122,7 @@ RSpec.describe "Documents", type: :request do
         post "/v1/documents", params: params, headers: auth_headers(api_key)
 
         expect(response).to have_http_status(:unprocessable_content), "expected 422 for #{params}"
-        expect(json).to eq(
-          "error" => {
-            "type" => "invalid_request", "code" => "parameter_missing",
-            "message" => "The file parameter is required.", "param" => "file"
-          }
-        )
+        expect(json).to eq(invalid_request_error("parameter_missing", "The file parameter is required."))
       end
     end
 
@@ -136,12 +132,7 @@ RSpec.describe "Documents", type: :request do
       end.not_to change(Document, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(json).to eq(
-        "error" => {
-          "type" => "invalid_request", "code" => "unsupported_file_type",
-          "message" => "The file must be a PDF, PNG or JPEG.", "param" => "file"
-        }
-      )
+      expect(json).to eq(invalid_request_error("unsupported_file_type", "The file must be a PDF, PNG or JPEG."))
     end
   end
 
@@ -151,7 +142,7 @@ RSpec.describe "Documents", type: :request do
                             headers: auth_headers(api_key)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(json).to eq(file_too_large_error("PDF files must be 20 MB or smaller."))
+      expect(json).to eq(invalid_request_error("file_too_large", "PDF files must be 20 MB or smaller."))
     end
 
     it "rejects a PNG or JPEG over 7 MB, stating the image limit" do
@@ -160,7 +151,7 @@ RSpec.describe "Documents", type: :request do
                               headers: auth_headers(api_key)
 
         expect(response).to have_http_status(:unprocessable_content), "expected 422 for #{fixture}"
-        expect(json).to eq(file_too_large_error("#{label} files must be 7 MB or smaller."))
+        expect(json).to eq(invalid_request_error("file_too_large", "#{label} files must be 7 MB or smaller."))
       end
     end
 

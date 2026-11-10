@@ -18,6 +18,9 @@ _Avoid_: Token, secret, password
 A file an organization has uploaded (PDF, PNG or JPEG), together with its metadata.
 _Avoid_: File, upload, attachment
 
+**File** (narrow sense):
+The raw bytes of a document as sent in the multipart `file` field. Use it only for those bytes, as in the upload error codes `unsupported_file_type`, `file_too_large` and `unreadable_file`; the domain concept is always a document.
+
 **Extraction schema**:
 A versioned definition of the fields to pull out of a document; a version never changes once published.
 _Avoid_: Template, form
