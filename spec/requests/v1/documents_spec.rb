@@ -5,21 +5,37 @@ RSpec.describe "Documents", type: :request do
   let(:pdf) { fixture_file_upload("invoice.pdf", "application/pdf") }
 
   # Known-good values for spec/fixtures/files/invoice.pdf.
-  let(:pdf_sha256) { "6350af32579ffbd7b251a6244bf9bd036d303cbc7404ae06d5e02f1b8f5b994f" }
-  let(:pdf_byte_size) { 218 }
+  let(:pdf_sha256) { "0d509281e91d6d7cbfbcb4d16f5a205578e65765a11c59187b07b585d555b00d" }
+  let(:pdf_byte_size) { 329 }
+
+  # A fixture padded with zero bytes to the given size, built at run time so
+  # the repo needs no multi-megabyte fixtures. Detection reads the leading
+  # bytes, so the padded file keeps the fixture's type.
+  def padded_upload(fixture, byte_size, content_type)
+    file = Tempfile.new([ "padded", File.extname(fixture) ], binmode: true)
+    file.write(file_fixture(fixture).binread)
+    file.write("\0" * (byte_size - file.size))
+    file.flush
+    Rack::Test::UploadedFile.new(file.path, content_type, true)
+  end
+
+  def file_too_large_error(message)
+    { "error" => { "type" => "invalid_request", "code" => "file_too_large", "message" => message, "param" => "file" } }
+  end
 
   describe "POST /v1/documents" do
     it "stores the PDF and returns 201 with the document" do
       post "/v1/documents", params: { file: pdf }, headers: auth_headers(api_key)
 
       expect(response).to have_http_status(:created)
-      expect(json.keys).to contain_exactly("id", "filename", "content_type", "byte_size", "checksum_sha256", "created_at")
+      expect(json.keys).to contain_exactly("id", "filename", "content_type", "byte_size", "checksum_sha256", "page_count", "created_at")
       expect(json["id"]).to match(/\Adoc_\h{8}-\h{4}-7\h{3}-\h{4}-\h{12}\z/)
       expect(json).to include(
         "filename" => "invoice.pdf",
         "content_type" => "application/pdf",
         "byte_size" => pdf_byte_size,
-        "checksum_sha256" => pdf_sha256
+        "checksum_sha256" => pdf_sha256,
+        "page_count" => 1
       )
       expect(Time.iso8601(json["created_at"])).to be_within(1.minute).of(Time.current)
     end
@@ -57,7 +73,106 @@ RSpec.describe "Documents", type: :request do
         expect(json["checksum_sha256"]).to eq(pdf_sha256)
       end
     end
+
+    it "detects the content type from the file's bytes, not the client's header" do
+      post_document(api_key, fixture: "receipt.png", content_type: "application/pdf")
+
+      expect(response).to have_http_status(:created)
+      expect(json["content_type"]).to eq("image/png")
+    end
+
+    it "reports a PDF's page count, and 1 for an image" do
+      { [ "three_pages.pdf", "application/pdf" ] => 3,
+        [ "receipt.png", "image/png" ] => 1,
+        [ "receipt.jpg", "image/jpeg" ] => 1 }.each do |(fixture, content_type), page_count|
+        post_document(api_key, fixture: fixture, content_type: content_type)
+
+        expect(response).to have_http_status(:created), "expected 201 for #{fixture}"
+        expect(json["page_count"]).to eq(page_count), "expected #{page_count} pages for #{fixture}"
+      end
+    end
+
+    it "rejects a PDF of more than 20 pages" do
+      post_document(api_key, fixture: "twenty_one_pages.pdf")
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json).to eq(
+        "error" => {
+          "type" => "invalid_request", "code" => "too_many_pages",
+          "message" => "PDF files must have 20 pages or fewer.", "param" => "file"
+        }
+      )
+    end
+
+    it "rejects a PDF that cannot be read" do
+      post_document(api_key, fixture: "broken.pdf")
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json).to eq(
+        "error" => {
+          "type" => "invalid_request", "code" => "unreadable_file",
+          "message" => "The file could not be read as a PDF.", "param" => "file"
+        }
+      )
+    end
+
+    it "rejects a request with no file, naming the missing field" do
+      [ {}, { file: "" }, { file: "invoice.pdf" } ].each do |params|
+        post "/v1/documents", params: params, headers: auth_headers(api_key)
+
+        expect(response).to have_http_status(:unprocessable_content), "expected 422 for #{params}"
+        expect(json).to eq(
+          "error" => {
+            "type" => "invalid_request", "code" => "parameter_missing",
+            "message" => "The file parameter is required.", "param" => "file"
+          }
+        )
+      end
+    end
+
+    it "rejects a file that is not a PDF, PNG or JPEG, whatever the client calls it" do
+      expect do
+        post_document(api_key, fixture: "notes.txt", content_type: "application/pdf")
+      end.not_to change(Document, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json).to eq(
+        "error" => {
+          "type" => "invalid_request", "code" => "unsupported_file_type",
+          "message" => "The file must be a PDF, PNG or JPEG.", "param" => "file"
+        }
+      )
+    end
   end
+
+  describe "POST /v1/documents size limits" do
+    it "rejects a PDF over 20 MB, stating the PDF limit" do
+      post "/v1/documents", params: { file: padded_upload("invoice.pdf", 20.megabytes + 1, "application/pdf") },
+                            headers: auth_headers(api_key)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json).to eq(file_too_large_error("PDF files must be 20 MB or smaller."))
+    end
+
+    it "rejects a PNG or JPEG over 7 MB, stating the image limit" do
+      { "receipt.png" => "PNG", "receipt.jpg" => "JPEG" }.each do |fixture, label|
+        post "/v1/documents", params: { file: padded_upload(fixture, 7.megabytes + 1, "image/png") },
+                              headers: auth_headers(api_key)
+
+        expect(response).to have_http_status(:unprocessable_content), "expected 422 for #{fixture}"
+        expect(json).to eq(file_too_large_error("#{label} files must be 7 MB or smaller."))
+      end
+    end
+
+    it "accepts an image of exactly 7 MB" do
+      post "/v1/documents", params: { file: padded_upload("receipt.png", 7.megabytes, "image/png") },
+                            headers: auth_headers(api_key)
+
+      expect(response).to have_http_status(:created)
+      expect(json["byte_size"]).to eq(7.megabytes)
+    end
+  end
+
   describe "GET /v1/documents/:id" do
     let(:not_found_error) do
       { "error" => { "type" => "not_found", "code" => "not_found", "message" => "No such resource.", "param" => nil } }

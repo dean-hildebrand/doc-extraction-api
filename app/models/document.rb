@@ -10,27 +10,18 @@ class Document < ApplicationRecord
 
   # Builds a document from an uploaded file on behalf of an API key. Call it on
   # an organization's documents so the document belongs to that organization.
-  # Every call makes a new document, even for a file uploaded before.
+  # Every call makes a new document, even for a file uploaded before. Raises an
+  # ApiError for a file the service cannot process.
   def self.build_from_upload(upload, api_key:)
+    file = DocumentFile.new(upload).tap(&:validate!)
     new(
       api_key: api_key,
-      filename: upload.original_filename,
-      content_type: upload.content_type,
-      byte_size: upload.size,
-      checksum_sha256: sha256_of(upload),
-      file: upload
+      filename: file.filename,
+      content_type: file.content_type,
+      byte_size: file.byte_size,
+      checksum_sha256: file.checksum_sha256,
+      page_count: file.page_count,
+      file: file.attachable
     )
   end
-
-  def self.sha256_of(upload)
-    digest = OpenSSL::Digest::SHA256.new
-    io = upload.to_io
-    io.rewind
-    while (chunk = io.read(64.kilobytes))
-      digest.update(chunk)
-    end
-    io.rewind
-    digest.hexdigest
-  end
-  private_class_method :sha256_of
 end
